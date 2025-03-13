@@ -19,8 +19,8 @@ use arrow_array::builder::GenericStringBuilder;
 use arrow_array::{Array, GenericStringArray, OffsetSizeTrait};
 use arrow_data::ArrayData;
 use arrow_schema::ArrowError;
+use std::fmt::Write;
 use std::marker::PhantomData;
-use std::io::Write;
 
 use crate::reader::tape::{Tape, TapeElement};
 use crate::reader::ArrayDecoder;
@@ -31,7 +31,7 @@ const FALSE: &str = "false";
 pub struct StringArrayDecoder<O: OffsetSizeTrait> {
     coerce_primitive: bool,
     phantom: PhantomData<O>,
-    number_buffer: Vec<u8>,
+    number_buffer: String,
 }
 
 impl<O: OffsetSizeTrait> StringArrayDecoder<O> {
@@ -39,17 +39,11 @@ impl<O: OffsetSizeTrait> StringArrayDecoder<O> {
         Self {
             coerce_primitive,
             phantom: Default::default(),
-            number_buffer: Vec::with_capacity(32),
+            number_buffer: String::new(),
         }
     }
 
-    fn write_number<T: std::fmt::Display>(&mut self, n: T) -> &str {
-        self.number_buffer.clear();
-        write!(&mut self.number_buffer, "{}", n).unwrap();
-        // SAFETY: We only write ASCII characters (digits, signs, decimal points,
-        // exponent symbols) into `number_buffer`, which are guaranteed valid UTF-8.
-        unsafe { std::str::from_utf8_unchecked(&self.number_buffer) }
-    }
+
 }
 
 impl<O: OffsetSizeTrait> ArrayDecoder for StringArrayDecoder<O> {
@@ -114,24 +108,28 @@ impl<O: OffsetSizeTrait> ArrayDecoder for StringArrayDecoder<O> {
                 TapeElement::I64(high) if coerce_primitive => match tape.get(p + 1) {
                     TapeElement::I32(low) => {
                         let val = ((high as i64) << 32) | (low as u32) as i64;
-                        let s = self.write_number(val);
-                        builder.append_value(s);
+                        self.number_buffer.clear();
+                        write!(&mut self.number_buffer, "{}", val).unwrap();
+                        builder.append_value(&self.number_buffer);
                     }
                     _ => unreachable!(),
                 },
                 TapeElement::I32(n) if coerce_primitive => {
-                    let s = self.write_number(n);
-                    builder.append_value(s);
+                    self.number_buffer.clear();
+                    write!(&mut self.number_buffer, "{}", n).unwrap();
+                    builder.append_value(&self.number_buffer);
                 }
                 TapeElement::F32(n) if coerce_primitive => {
-                    let s = self.write_number(n);
-                    builder.append_value(s);
+                    self.number_buffer.clear();
+                    write!(&mut self.number_buffer, "{}", n).unwrap();
+                    builder.append_value(&self.number_buffer);
                 }
                 TapeElement::F64(high) if coerce_primitive => match tape.get(p + 1) {
                     TapeElement::F32(low) => {
                         let val = f64::from_bits(((high as u64) << 32) | low as u64);
-                        let s = self.write_number(val);
-                        builder.append_value(s);
+                        self.number_buffer.clear();
+                        write!(&mut self.number_buffer, "{}", val).unwrap();
+                        builder.append_value(&self.number_buffer);
                     }
                     _ => unreachable!(),
                 },
