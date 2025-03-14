@@ -16,6 +16,7 @@
 // under the License.
 
 use criterion::*;
+use serde::Serialize;
 
 use arrow::datatypes::*;
 use arrow::util::bench_util::{
@@ -28,8 +29,17 @@ use arrow_buffer::{BooleanBuffer, NullBuffer, OffsetBuffer};
 use arrow_json::LineDelimitedWriter;
 use rand::Rng;
 use std::sync::Arc;
-
+use arrow_json::ReaderBuilder;
+use arrow::array::StringArray;
+use arrow_row::Row;
 const NUM_ROWS: usize = 65536;
+
+#[derive(Serialize)]
+struct TestRow {
+    big: i64,
+    small: i32,
+    active: bool,
+}
 
 fn do_bench(c: &mut Criterion, name: &str, batch: &RecordBatch) {
     c.bench_function(name, |b| {
@@ -181,6 +191,53 @@ fn bench_struct_list(c: &mut Criterion) {
     do_bench(c, "bench_struct_list", &batch)
 }
 
+
+
+fn bench_coerce_primitive(c: &mut Criterion) {
+    // Create schema for string output
+    let schema = Arc::new(Schema::new(vec![
+        Field::new("big", DataType::Utf8, false),
+        Field::new("small", DataType::Utf8, false),
+        Field::new("active", DataType::Utf8, false),
+    ]));
+
+    // Create test data using primitive arrays to generate values
+    let big_array = create_primitive_array::<Int64Type>(NUM_ROWS, 0.0);
+    let small_array = create_primitive_array::<Int32Type>(NUM_ROWS, 0.0);
+
+    // Create test rows
+    let rows: Vec<TestRow> = (0..NUM_ROWS)
+        .map(|i| TestRow {
+            big: big_array.value(i),
+            small: small_array.value(i),
+            // Just alternate booleans for demonstration
+            active: (i % 2) == 0,
+        })
+        .collect();
+
+    // Create the batch using ReaderBuilder
+    let mut decoder = ReaderBuilder::new(schema)
+        .with_coerce_primitive(true) // important for coercion
+        .build_decoder()
+        .expect("Failed to build decoder");
+
+    // Serialize the rows into the decoder
+    decoder
+        .serialize(&rows)
+        .expect("Failed to serialize rows");
+
+    // Flush out the final RecordBatch
+    let batch = decoder
+        .flush()
+        .expect("Failed to flush")
+        .expect("No RecordBatch produced");
+
+
+    do_bench(c, "bench_coerce_primitive", &batch);
+}
+
+
+
 fn criterion_benchmark(c: &mut Criterion) {
     bench_integer(c);
     bench_float(c);
@@ -192,6 +249,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     bench_list(c);
     bench_nullable_list(c);
     bench_struct_list(c);
+    bench_coerce_primitive(c);
 }
 
 criterion_group!(benches, criterion_benchmark);
