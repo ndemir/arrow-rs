@@ -30,8 +30,6 @@ use arrow_json::LineDelimitedWriter;
 use rand::Rng;
 use std::sync::Arc;
 use arrow_json::ReaderBuilder;
-use arrow::array::StringArray;
-use arrow_row::Row;
 const NUM_ROWS: usize = 65536;
 
 #[derive(Serialize)]
